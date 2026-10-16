@@ -149,12 +149,12 @@ public class MainActivity extends Activity {
         seek.setMax(100);
         seek.setProgress(current);
         
+        // ---- FIXED CUT-OFF HERE ----
         seek.setOnSeekBarChangeListener(new SeekBar.OnSeekBarChangeListener() {
             @Override
             public void onProgressChanged(SeekBar seekBar, int progress, boolean fromUser) {
-                int clamped = progress < 10 ? 10 : progress;
-                tv.setText(label + ": " + clamped + "%");
-                prefs.edit().putInt(key, clamped).apply();
+                tv.setText(label + ": " + progress + "%");
+                prefs.edit().putInt(key, progress).apply(); // Save sensitivity live
             }
 
             @Override
@@ -162,7 +162,7 @@ public class MainActivity extends Activity {
 
             @Override
             public void onStopTrackingTouch(SeekBar seekBar) {
-                reloadService();
+                reloadService(); // Force the sensor engine to update
             }
         });
 
@@ -172,22 +172,26 @@ public class MainActivity extends Activity {
 
     private void requestPermissionsAndBattery() {
         if (Build.VERSION.SDK_INT >= 33) {
-            if (checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED) {
-                requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 101);
+            if (checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, 1);
             }
         }
-        PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
-        if (pm != null && !pm.isIgnoringBatteryOptimizations(getPackageName())) {
-            Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
-            intent.setData(Uri.parse("package:" + getPackageName()));
-            startActivity(intent);
+        try {
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            if (pm != null && !pm.isIgnoringBatteryOptimizations(getPackageName())) {
+                Intent intent = new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                intent.setData(Uri.parse("package:" + getPackageName()));
+                startActivity(intent);
+            }
+        } catch (Exception e) {
+            e.printStackTrace();
         }
     }
 
     private void reloadService() {
-        Intent intent = new Intent(this, WakeService.class);
-        intent.setAction("RELOAD_CONFIG");
         if (prefs.getBoolean("service_enabled", true)) {
+            Intent intent = new Intent(this, WakeService.class);
+            intent.setAction("RELOAD_CONFIG");
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 startForegroundService(intent);
             } else {
