@@ -18,15 +18,30 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Accept Android SDK Licenses and Build APK Directly
+      - name: Compile and Sign APK Directly with Android SDK Tools
         run: |
-          yes | $ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager --licenses || true
-          curl -sL https://services.gradle.org/distributions/gradle-8.9-bin.zip -o gradle.zip
-          unzip -q gradle.zip
-          ./gradle-8.9/bin/gradle assembleDebug --no-daemon --stacktrace
+          set -ex
+          BUILD_TOOLS=$(ls -d $ANDROID_HOME/build-tools/* | sort -V | tail -n 1)
+          ANDROID_JAR=$(ls -d $ANDROID_HOME/platforms/android-* | sort -V | tail -n 1)/android.jar
+          mkdir -p build/gen build/obj build/apk
+          "$BUILD_TOOLS/aapt2" link -o build/apk/unaligned.apk \
+            --manifest app/src/main/AndroidManifest.xml \
+            -I "$ANDROID_JAR" \
+            --min-sdk-version 29 \
+            --target-sdk-version 34 \
+            --java build/gen
+          javac --release 11 -classpath "$ANDROID_JAR:build/gen" -d build/obj \
+            app/src/main/java/com/cmf/wakefixer/*.java
+          "$BUILD_TOOLS/d8" --lib "$ANDROID_JAR" --min-api 29 --output build/apk/ \
+            $(find build/obj -name "*.class")
+          cd build/apk
+          zip -q unaligned.apk classes.dex
+          "$BUILD_TOOLS/zipalign" -p -f 4 unaligned.apk aligned.apk
+          keytool -genkeypair -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+          "$BUILD_TOOLS/apksigner" sign --ks debug.keystore --ks-pass pass:android --key-pass pass:android --out CMF-Wake-Fixer.apk aligned.apk
 
       - name: Upload Compiled APK
         uses: actions/upload-artifact@v4
         with:
           name: CMF-Wake-Fixer-Android16-APK
-          path: app/build/outputs/apk/debug/app-debug.apk
+          path: build/apk/CMF-Wake-Fixer.apk
